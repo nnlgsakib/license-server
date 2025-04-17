@@ -12,7 +12,7 @@ const parseEnvInt = (key: string, defaultValue: number) =>
 
 // Export the config object
 export const config = {
-  port: parseEnvInt('PORT', 3000),
+  port: parseEnvInt('PORT', 3005),
   private_key: parseEnv('ECC_PRIVATE_KEY'),
   masterkey: parseEnv('MASTER_KEY'),
   pay_page_url: parseEnv('WEB_PAGE'),

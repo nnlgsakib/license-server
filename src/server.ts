@@ -5,6 +5,7 @@ import bodyParser from 'body-parser'
 import { ec as EC } from 'elliptic'
 import crypto from 'crypto'
 import winston from 'winston'
+import cron from 'node-cron'
 import {
   generateLicense,
   renewLicense,
@@ -12,13 +13,14 @@ import {
   getLicenseDetails,
   blockLicense,
   unblockLicense,
+  monitorLicenses,
 } from './services/licenseService'
 import { asyncHandler } from './utils/async_handler'
 
 const ec = new EC('secp256k1')
 
 const WHITELISTED_PUBLIC_KEYS = new Set<string>([
-    '04da2d4397a0ed65b5513dbccb5ea82b3c13596df84b3e99b57100b7c91bd54589d58e4fcf62738fca7494d631a7f425b9139b707c09e8565f2bb7601232dc122a'
+    '04a6987754f167c0f44ef33b8fbd0d3a5729785db128a8d98809bfa3e874ede2b5b5e36ecdd93c6adf075173245b50b9734206cde8ccfe8b51612d7f121cacf059'
 ])
 
 const logger = winston.createLogger({
@@ -155,6 +157,12 @@ app.post('/license/unblock', asyncHandler(async (req: Request, res: Response): P
   res.json({ success })
 }))
 
+cron.schedule('0 * * * *', () => {
+  logger.info('license monitoring service started')
+  monitorLicenses().catch((error) => {
+    logger.error('License monitoring job failed:', error)
+  })
+})
 app.listen(PORT, () => {
   logger.info(`🚀 License microservice running at http://localhost:${PORT}`)
 })
