@@ -156,13 +156,20 @@ app.post('/license/unblock', asyncHandler(async (req: Request, res: Response): P
   const success = await unblockLicense(license)
   res.json({ success })
 }))
+ function runCrons() {
 
-cron.schedule('0 * * * *', () => {
-  logger.info('license monitoring service started')
-  monitorLicenses().catch((error) => {
-    logger.error('License monitoring job failed:', error)
+
+  // Run every hour at the top of the hour
+  cron.schedule('0 * * * *', () => {
+    logger.info('license monitoring service started')
+    monitorLicenses().catch((error) => {
+      logger.error('License monitoring job failed:', error)
+    })
   })
-})
+
+}
+
+runCrons()
 app.listen(PORT, () => {
   logger.info(`🚀 License microservice running at http://localhost:${PORT}`)
 })
