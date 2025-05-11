@@ -1,107 +1,124 @@
-const EC = require('elliptic').ec;
-const crypto = require('crypto');
 const axios = require('axios');
+const { ec: EC } = require('elliptic');
+const crypto = require('crypto');
 
 const ec = new EC('secp256k1');
+const BASE_URL = 'http://localhost:3005';
 
-// Replace this with the private key you provide (in hex format)
-const privateKey = 'c76e176bde72270fbba50ee372e489269cde6a7caf77e550af82b4512730f72e'; // Must match the whitelisted public key
-
-// Base URL of the license server
-const baseUrl = 'http://localhost:3001';
-
-// Function to sign a message with the private key
-async function signMessage(privKey, message) {
-  const key = ec.keyFromPrivate(privKey, 'hex');
+// Helper function to sign a message with a private key
+function signMessage(message, privateKey) {
+  const key = ec.keyFromPrivate(privateKey, 'hex');
   const hash = crypto.createHash('sha256').update(message).digest();
   const signature = key.sign(hash);
-  return JSON.stringify({
-    r: signature.r.toString(16),
-    s: signature.s.toString(16),
+  return {
+    r: signature.r.toString('hex'),
+    s: signature.s.toString('hex'),
     recoveryParam: signature.recoveryParam,
-  });
+  };
 }
 
-// Main test function
-async function testLicenseServer() {
+// Helper function to make authenticated requests
+async function makeAuthenticatedRequest(endpoint, data, privateKey) {
+  const message = JSON.stringify(data);
+  const signature = signMessage(message, privateKey);
   try {
-    // Step 1: Generate a license
-    console.log('Testing /license/generate...');
-    let message = Date.now().toString();
-    let signature = await signMessage(privateKey, message);
-    console.log("signature:", signature);
-    const generateResponse = await axios.post(`${baseUrl}/license/generate`, {
+    const response = await axios.post(`${BASE_URL}${endpoint}`, {
+      ...data,
       message,
-      signature,
-      email: 'test@example.com',
-      months: 1,
+      signature: JSON.stringify(signature),
     });
-    console.log('Generate License Response:', generateResponse.data);
-    const { license, userKey } = generateResponse.data; // Assuming response includes these fields
-
-    // Step 2: Verify the license
-    console.log('\nTesting /license/verify...');
-    message = Date.now().toString();
-    signature = await signMessage(privateKey, message);
-    const verifyResponse = await axios.post(`${baseUrl}/license/verify`, {
-      message,
-      signature,
-      license,
-      userKey,
-    });
-    console.log('Verify License Response:', verifyResponse.data);
-
-    // Step 3: Get license details
-    console.log('\nTesting /license/details...');
-    message = Date.now().toString();
-    signature = await signMessage(privateKey, message);
-    const detailsResponse = await axios.post(`${baseUrl}/license/details`, {
-      message,
-      signature,
-      license,
-      userKey,
-    });
-    console.log('License Details Response:', detailsResponse.data);
-
-    // Step 4: Renew the license
-    console.log('\nTesting /license/renew...');
-    message = Date.now().toString();
-    signature = await signMessage(privateKey, message);
-    const renewResponse = await axios.post(`${baseUrl}/license/renew`, {
-      message,
-      signature,
-      license,
-      userKey,
-      months: 1,
-    });
-    console.log('Renew License Response:', renewResponse.data);
-
-    // Step 5: Block the license
-    console.log('\nTesting /license/block...');
-    message = Date.now().toString();
-    signature = await signMessage(privateKey, message);
-    const blockResponse = await axios.post(`${baseUrl}/license/block`, {
-      message,
-      signature,
-      license,
-    });
-    console.log('Block License Response:', blockResponse.data);
-
-    // Step 6: Unblock the license
-    console.log('\nTesting /license/unblock...');
-    message = Date.now().toString();
-    signature = await signMessage(privateKey, message);
-    const unblockResponse = await axios.post(`${baseUrl}/license/unblock`, {
-      message,
-      signature,
-      license,
-    });
-    console.log('Unblock License Response:', unblockResponse.data);
-
+    return response.data;
   } catch (error) {
-    console.error('Error during test:', error.response ? error.response.data : error.message);
+    throw new Error(`Error in ${endpoint}: ${error.response?.data?.error || error.message}`);
   }
 }
 
-// Run the test
-testLicenseServer();
+// Test all API endpoints
+async function testApis() {
+  let publicKey, privateKey, licenseKey, userKey;
+
+  console.log('Starting API tests...\n');
+
+  // 1. Test /health endpoint
+  try {
+    const healthResponse = await axios.get(`${BASE_URL}/health`);
+    console.log('Health Check:', healthResponse.data);
+  } catch (error) {
+    console.error('Health Check failed:', error.message);
+  }
+
+  // 2. Test /gen_key_set endpoint
+  try {
+    const keyResponse = await axios.post(`${BASE_URL}/gen_key_set`);
+    publicKey = keyResponse.data.publicKey;
+    privateKey = keyResponse.data.privateKey;
+    console.log('Generated  Generate Key Set:', keyResponse.data);
+  } catch (error) {
+    console.error('Generate Key Set failed:', error.message);
+    return;
+  }
+
+  // 3. Test /license/generate endpoint
+  try {
+    const generateData = { email: 'test@example.com', months: 12 };
+    const generateResponse = await makeAuthenticatedRequest('/license/generate', generateData, privateKey);
+    licenseKey = generateResponse.license;
+    userKey = generateResponse.userKey;
+    console.log('Generate License:', generateResponse);
+  } catch (error) {
+    console.error('Generate License failed:', error.message);
+    return;
+  }
+
+  // 4. Test /license/verify endpoint
+  try {
+    const verifyData = { license: licenseKey, userKey };
+    const verifyResponse = await makeAuthenticatedRequest('/license/verify', verifyData, privateKey);
+    console.log('Verify License:', verifyResponse);
+  } catch (error) {
+    console.error('Verify License failed:', error.message);
+  }
+
+  // 5. Test /license/details endpoint
+  try {
+    const detailsData = { license: licenseKey, userKey };
+    const detailsResponse = await makeAuthenticatedRequest('/license/details', detailsData, privateKey);
+    console.log('License Details:', detailsResponse);
+  } catch (error) {
+    console.error('License Details failed:', error.message);
+  }
+
+  // 6. Test /license/renew endpoint
+  try {
+    const renewData = { license: licenseKey, userKey, months: 6 };
+    const renewResponse = await makeAuthenticatedRequest('/license/renew', renewData, privateKey);
+    console.log('Renew License:', renewResponse);
+  } catch (error) {
+    console.error('Renew License failed:', error.message);
+  }
+
+  // 7. Test /license/block endpoint
+  try {
+    const blockData = { license: licenseKey };
+    const blockResponse = await makeAuthenticatedRequest('/license/block', blockData, privateKey);
+    console.log('Block License:', blockResponse);
+  } catch (error) {
+    console.error('Block License failed:', error.message);
+  }
+
+  // 8. Test /license/unblock endpoint
+  try {
+    const unblockData = { license: licenseKey };
+    const unblockResponse = await makeAuthenticatedRequest('/license/unblock', unblockData, privateKey);
+    console.log('Unblock License:', unblockResponse);
+  } catch (error) {
+    console.error('Unblock License failed:', error.message);
+  }
+
+  console.log('\nAPI tests completed.');
+}
+
+// Run the tests
+testApis().catch((error) => {
+  console.error('Test suite failed:', error.message);
+});

@@ -140,3 +140,22 @@ export function getAllWithPrefix<T>(prefix: string): Promise<{key: string; value
 export async function getAllLicenses<T>(): Promise<{key: string; value: T}[]> {
   return getAllWithPrefix<T>('license:')
 }
+
+// New functions for public key management
+export async function addPublicKey(publicKey: string): Promise<void> {
+  await set(`pubkey:${publicKey}`, { publicKey, createdAt: new Date().toISOString() })
+}
+
+export async function isPublicKeyWhitelisted(publicKey: string): Promise<boolean> {
+  const value = await get<{ publicKey: string; createdAt: string }>(`pubkey:${publicKey}`)
+  return !!value
+}
+
+export async function removePublicKey(publicKey: string): Promise<void> {
+  await del(`pubkey:${publicKey}`)
+}
+
+export async function getAllPublicKeys(): Promise<string[]> {
+  const keys = await getAllWithPrefix<{ publicKey: string; createdAt: string }>('pubkey:')
+  return keys.map((entry) => entry.value.publicKey)
+}

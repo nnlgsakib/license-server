@@ -1,4 +1,4 @@
-// src/index.ts
+// src/server.ts
 
 import express, { Request, Response, NextFunction } from 'express'
 import bodyParser from 'body-parser'
@@ -16,12 +16,9 @@ import {
   monitorLicenses,
 } from './services/licenseService'
 import { asyncHandler } from './utils/async_handler'
+import { addPublicKey, isPublicKeyWhitelisted } from './storage/license_db'
 
 const ec = new EC('secp256k1')
-
-const WHITELISTED_PUBLIC_KEYS = new Set<string>([
-    '04a6987754f167c0f44ef33b8fbd0d3a5729785db128a8d98809bfa3e874ede2b5b5e36ecdd93c6adf075173245b50b9734206cde8ccfe8b51612d7f121cacf059'
-])
 
 const logger = winston.createLogger({
   level: 'info',
@@ -32,7 +29,32 @@ const logger = winston.createLogger({
   transports: [new winston.transports.Console()],
 })
 
+// Initialize default public keys
+const DEFAULT_PUBLIC_KEYS = [
+  '04a6987754f167c0f44ef33b8fbd0d3a5729785db128a8d98809bfa3e874ede2b5b5e36ecdd93c6adf075173245b50b9734206cde8ccfe8b51612d7f121cacf059',
+  '04da2d4397a0ed65b5513dbccb5ea82b3c13596df84b3e99b57100b7c91bd54589d58e4fcf62738fca7494d631a7f425b9139b707c09e8565f2bb7601232dc122a',
+]
+
+async function initializePublicKeys() {
+  try {
+    for (const pubKey of DEFAULT_PUBLIC_KEYS) {
+      if (!(await isPublicKeyWhitelisted(pubKey))) {
+        await addPublicKey(pubKey)
+        logger.info(`Initialized default public key: ${pubKey}`)
+      }
+    }
+  } catch (error) {
+    logger.error(`Failed to initialize public keys: ${error}`)
+    throw error
+  }
+}
+
 function authenticateRequest(req: Request, res: Response, next: NextFunction) {
+  if (req.path === '/gen_key_set' || req.path === '/health') {
+    next()
+    return
+  }
+
   const { message, signature } = req.body
 
   if (!message || !signature) {
@@ -47,23 +69,30 @@ function authenticateRequest(req: Request, res: Response, next: NextFunction) {
     const recoveredKey = ec.recoverPubKey(hash, sig, sig.recoveryParam, 'hex')
     const pubKeyHex = recoveredKey.encode('hex')
 
-    if (!WHITELISTED_PUBLIC_KEYS.has(pubKeyHex)) {
-      logger.warn(`Unauthorized access attempt from pubKey: ${pubKeyHex}`)
-      res.status(403).json({ error: 'Unauthorized public key' })
-      return
-    }
+    isPublicKeyWhitelisted(pubKeyHex)
+      .then((isWhitelisted) => {
+        if (!isWhitelisted) {
+          logger.warn(`Unauthorized access attempt from pubKey: ${pubKeyHex}`)
+          res.status(403).json({ error: 'Unauthorized public key' })
+          return
+        }
 
-    const key = ec.keyFromPublic(pubKeyHex, 'hex')
-    const isValid = key.verify(hash, sig)
+        const key = ec.keyFromPublic(pubKeyHex, 'hex')
+        const isValid = key.verify(hash, sig)
 
-    if (!isValid) {
-      logger.warn(`Invalid signature from pubKey: ${pubKeyHex}`)
-      res.status(403).json({ error: 'Invalid signature' })
-      return
-    }
+        if (!isValid) {
+          logger.warn(`Invalid signature from pubKey: ${pubKeyHex}`)
+          res.status(403).json({ error: 'Invalid signature' })
+          return
+        }
 
-    logger.info(`Authorized request from pubKey: ${pubKeyHex}`)
-    next()
+        logger.info(`Authorized request from pubKey: ${pubKeyHex}`)
+        next()
+      })
+      .catch((error) => {
+        logger.error(`Database error during authentication: ${error}`)
+        res.status(500).json({ error: 'Authentication failed' })
+      })
   } catch (error) {
     logger.error(`Authentication error: ${error}`)
     res.status(500).json({ error: 'Authentication failed' })
@@ -71,7 +100,7 @@ function authenticateRequest(req: Request, res: Response, next: NextFunction) {
 }
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 3005 // Match logs
 
 app.use(bodyParser.json())
 app.use(authenticateRequest)
@@ -80,6 +109,31 @@ app.use((req, _, next) => {
   logger.info(`Incoming ${req.method} request to ${req.originalUrl} | Body: ${JSON.stringify(req.body)}`)
   next()
 })
+
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' })
+})
+
+app.post('/gen_key_set', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  try {
+    const keyPair = ec.genKeyPair()
+    const publicKey = keyPair.getPublic('hex')
+    const privateKey = keyPair.getPrivate('hex')
+
+    await addPublicKey(publicKey)
+    logger.info(`New key pair generated and public key stored: ${publicKey}`)
+
+    res.json({
+      publicKey,
+      privateKey,
+      message: 'Key pair generated successfully. Store the private key securely.',
+    })
+  } catch (error) {
+    logger.error(`Key generation error: ${error}`)
+    res.status(500).json({ error: 'Failed to generate key pair' })
+  }
+}))
 
 app.post('/license/generate', asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const { email, months } = req.body
@@ -156,20 +210,27 @@ app.post('/license/unblock', asyncHandler(async (req: Request, res: Response): P
   const success = await unblockLicense(license)
   res.json({ success })
 }))
- function runCrons() {
 
-
-  // Run every hour at the top of the hour
+function runCrons() {
   cron.schedule('0 * * * *', () => {
     logger.info('license monitoring service started')
     monitorLicenses().catch((error) => {
       logger.error('License monitoring job failed:', error)
     })
   })
-
 }
 
-runCrons()
-app.listen(PORT, () => {
-  logger.info(`🚀 License microservice running at http://localhost:${PORT}`)
-})
+async function startServer() {
+  try {
+    await initializePublicKeys()
+    runCrons()
+    app.listen(PORT, () => {
+      logger.info(`🚀 License microservice running at http://localhost:${PORT}`)
+    })
+  } catch (error) {
+    logger.error(`Failed to start server: ${error}`)
+    process.exit(1)
+  }
+}
+
+startServer()
