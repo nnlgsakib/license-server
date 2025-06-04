@@ -2,14 +2,14 @@ export function getLicenseSubject(): string {
   return 'Your Web3Pay License and User Key'
 }
 
-export function getLicenseText(license: string, userKey: string, expiretion: string): string {
+export function getLicenseText(license: string, userKey: string, expiration: string): string {
   return `Dear Customer,
   
   We are pleased to provide you with your new Web3Pay license and user key. Please find the details below:
   
   License: ${license}
   User Key: ${userKey}
-  valid till : ${expiretion}
+  Expiration: ${expiration}
   Keep this information safe as it will be required for future validations and renewals.
   
   Thank you for choosing Web3Pay!
@@ -18,7 +18,7 @@ export function getLicenseText(license: string, userKey: string, expiretion: str
   W3PAY`
 }
 
-export function getLicenseHtml(license: string, userKey: string, valid_till: string): string {
+export function getLicenseHtml(license: string, userKey: string, expiration: string): string {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -78,13 +78,13 @@ export function getLicenseHtml(license: string, userKey: string, valid_till: str
                 <p>We are pleased to provide you with your new Web3Pay license and user key. Please find the details below:</p>
                 <p><strong>License:</strong> <span class="highlight">${license}</span></p>
                 <p><strong>User Key:</strong> <span class="highlight">${userKey}</span></p>
-                <p><strong>Expiretion:</strong> <span class="highlight">${valid_till}</span></p>
+                <p><strong>Expiration:</strong> <span class="highlight">${expiration}</span></p>
                 <p>Keep this information safe as it will be required for future validations and renewals.</p>
                 <p>Thank you for choosing Web3Pay!</p>
                 <p>Best regards,<br>W3PAY</p>
             </div>
             <div class="footer">
-                <p>&copy; ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
                 <p>If you have any questions, please contact us at support@w3pay.com.</p>
             </div>
         </div>

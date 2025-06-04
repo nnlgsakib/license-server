@@ -60,7 +60,7 @@ async function testApis() {
 
   // 3. Test /license/generate endpoint
   try {
-    const generateData = { email: 'test@example.com', months: 12 };
+    const generateData = { email: 'b423b7dc-d388-4453-ad55-b9d27b9b3c08@emailhook.site', months: 12 };
     const generateResponse = await makeAuthenticatedRequest('/license/generate', generateData, privateKey);
     licenseKey = generateResponse.license;
     userKey = generateResponse.userKey;

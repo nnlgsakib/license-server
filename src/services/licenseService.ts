@@ -1,33 +1,20 @@
-import {set, get, getAllLicenses} from '../storage/license_db'
-import {LicenseData, LicenseValidationResult} from '../license'
-import {generateUserKey} from '../utils/gen_user_key'
-import {gen_license, gen_user_key_hash} from '../utils/gen_hash'
+import { set, get, getAllLicenses } from '../storage/license_db'
+import { LicenseData, LicenseValidationResult } from '../license'
+import { generateUserKey } from '../utils/gen_user_key'
+import { gen_license, gen_user_key_hash } from '../utils/gen_hash'
 import {
   sendLicenseMail,
   sendLicenseExpiredMail,
   sendLicenseWarningMail,
   sendLicenseRenewalMail,
 } from './mailService'
-
-import {time_parser, getTimeRemaining, formatReadableDate} from '../utils/time-decoder'
+import { time_parser, getTimeRemaining, formatReadableDate, msToDays } from '../utils/time-decoder'
 import logger from '../utils/logger'
+import { config } from '../config/config'
 
 // Default license duration if no months are specified by the user.
 // '1mo' ~ 30 days. Adjust if exactness is needed.
 const DEFAULT_LICENSE_DURATION = '1mo'
-
-// If renewalWindow is not stored on the license, fall back to a default period (5 days).
-const DEFAULT_RENEWAL_FALLBACK = time_parser('5d')
-
-/**
- * Compute a dynamic renewal window based on the total license duration.
- * For example, 1/6 of the total license duration.
- * @param licenseDuration Total license duration in ms.
- * @returns Calculated renewal window in ms.
- */
-function computeRenewalWindow(licenseDuration: number): number {
-  return Math.floor(licenseDuration / 6)
-}
 
 /**
  * Generate a new license for a user with a validity period derived from the given number of months.
@@ -40,21 +27,19 @@ function computeRenewalWindow(licenseDuration: number): number {
 export const generateLicense = async (
   userEmail: string,
   months?: number
-): Promise<{license: string; userKey: string}> => {
+): Promise<{ license: string; userKey: string }> => {
   const license = gen_license()
   const userKey = generateUserKey()
 
   const durationStr = months && months > 0 ? `${months}mo` : DEFAULT_LICENSE_DURATION
   const licenseDuration = time_parser(durationStr)
-  const renewalWindow = computeRenewalWindow(licenseDuration)
 
   const licenseData: LicenseData = {
-    license:license,
+    license: license,
     validUntil: Date.now() + licenseDuration,
     user_key_hash: gen_user_key_hash(userKey),
     isBlocked: false,
     userEmail,
-    renewalWindow,
   }
 
   await set(`license:${license}`, licenseData)
@@ -63,12 +48,12 @@ export const generateLicense = async (
     (error) => logger.error('Failed to send license mail:', error)
   )
 
-  return {license, userKey}
+  return { license, userKey }
 }
 
 /**
  * Renew an existing license. If the user provides a number of months, it extends the license accordingly.
- * If the license is in the renewal window, it will be extended; otherwise it will not.
+ * If the license is within the fixed warning days, it will be extended; otherwise it will not.
  *
  * @param license License ID.
  * @param userKey User key associated with this license.
@@ -79,37 +64,37 @@ export const renewLicense = async (
   license: string,
   userKey: string,
   months?: number
-): Promise<LicenseValidationResult & {renewalWindowStartsAt?: string}> => {
+): Promise<LicenseValidationResult & { renewalWindowStartsAt?: string }> => {
   try {
     const licenseData = await get<LicenseData>(`license:${license}`)
     if (!licenseData) {
-      return {isValid: false, error: 'License not found'}
+      return { isValid: false, error: 'License not found' }
     }
 
     licenseData.validUntil = Number(licenseData.validUntil)
 
     const userKeyHash = gen_user_key_hash(userKey)
     if (licenseData.user_key_hash !== userKeyHash) {
-      return {isValid: false, error: 'Invalid user key'}
+      return { isValid: false, error: 'Invalid user key' }
     }
 
     const currentTime = Date.now()
     const timeUntilExpiration = licenseData.validUntil - currentTime
-    const renewalWindow = licenseData.renewalWindow || DEFAULT_RENEWAL_FALLBACK
+    const warningPeriod = config.warningDays * 24 * 60 * 60 * 1000 // Convert days to ms
 
     // If license is blocked
     if (licenseData.isBlocked) {
       if (timeUntilExpiration > 0) {
-        return {isValid: false, error: 'License is blocked by admin and cannot be renewed.'}
+        return { isValid: false, error: 'License is blocked by admin and cannot be renewed.' }
       }
-      // Blocked but expired, can still be renewed (as per previous logic)
+      // Blocked but expired, can still be renewed
       logger.info(`License ${license} is blocked due to expiration and can still be renewed.`)
     }
 
-    // License not yet in renewal window
-    if (timeUntilExpiration > renewalWindow) {
+    // License not yet in warning period
+    if (timeUntilExpiration > warningPeriod) {
       const renewalWindowStartsAt = new Date(
-        licenseData.validUntil - renewalWindow
+        licenseData.validUntil - warningPeriod
       ).toLocaleString()
       return {
         isValid: false,
@@ -118,33 +103,28 @@ export const renewLicense = async (
       }
     }
 
-    // License within renewal window or slightly past expiration but still renewable
-    if (timeUntilExpiration >= -renewalWindow) {
+    // License within warning period or slightly past expiration but still renewable
+    if (timeUntilExpiration >= -warningPeriod) {
       const additionalDuration =
         months && months > 0 ? time_parser(`${months}mo`) : time_parser(DEFAULT_LICENSE_DURATION)
 
       licenseData.validUntil = Math.max(currentTime, licenseData.validUntil) + additionalDuration
       licenseData.isBlocked = false
 
-      // Recompute renewal window if user provided a new month duration
-      if (months && months > 0) {
-        licenseData.renewalWindow = computeRenewalWindow(additionalDuration)
-      }
-
       await set(`license:${license}`, licenseData)
 
       const renewedUntil = new Date(licenseData.validUntil).toLocaleString()
       await sendLicenseRenewalMail(licenseData.userEmail, license, renewedUntil)
-      return {isValid: true}
+      return { isValid: true }
     }
 
     // If it's too late to renew
     licenseData.isBlocked = true
     await set(`license:${license}`, licenseData)
-    return {isValid: false, error: 'License cannot be renewed and is now permanently blocked.'}
+    return { isValid: false, error: 'License cannot be renewed and is now permanently blocked.' }
   } catch (error) {
     logger.error('Error during license renewal:', error)
-    return {isValid: false, error: 'Database error during renewal.'}
+    return { isValid: false, error: 'Database error during renewal.' }
   }
 }
 
@@ -200,30 +180,30 @@ export const verifyLicense = async (
   try {
     const licenseData = await get<LicenseData>(`license:${license}`)
     if (!licenseData) {
-      return {isValid: false, error: 'License not found'}
+      return { isValid: false, error: 'License not found' }
     }
 
     licenseData.validUntil = Number(licenseData.validUntil)
 
     if (licenseData.isBlocked) {
-      return {isValid: false, error: 'License is blocked'}
+      return { isValid: false, error: 'License is blocked' }
     }
 
     const userKeyHash = gen_user_key_hash(userKey)
     if (licenseData.user_key_hash !== userKeyHash) {
-      return {isValid: false, error: 'Invalid user key'}
+      return { isValid: false, error: 'Invalid user key' }
     }
 
     if (Date.now() >= licenseData.validUntil) {
       licenseData.isBlocked = true
       await set(`license:${license}`, licenseData)
-      return {isValid: false, error: 'License has expired and is now blocked'}
+      return { isValid: false, error: 'License has expired and is now blocked' }
     }
 
-    return {isValid: true}
+    return { isValid: true }
   } catch (error) {
     logger.error('Database error during verification:', error)
-    return {isValid: false, error: 'Database error during verification.'}
+    return { isValid: false, error: 'Database error during verification.' }
   }
 }
 
@@ -236,7 +216,7 @@ export const verifyLicense = async (
 export const getLicenseDetails = async (
   license: string,
   userKey: string
-): Promise<{endDate: string; remainingTime: string} | null> => {
+): Promise<{ endDate: string; remainingTime: string } | null> => {
   try {
     const licenseData = await get<LicenseData>(`license:${license}`)
     if (!licenseData) return null
@@ -261,7 +241,7 @@ export const getLicenseDetails = async (
 
 /**
  * Monitor all licenses stored in the database.
- * If a license is nearing expiration (within its renewal window), send a warning email.
+ * If a license is within the configured warning days, send a warning email.
  * If a license has expired, send an expiration email and block it.
  * This function is designed to be run periodically (e.g., via a cron job).
  */
@@ -269,21 +249,21 @@ export async function monitorLicenses(): Promise<void> {
   try {
     const licenses = await getAllLicenses<LicenseData>()
     const currentTime = Date.now()
+    const warningPeriod = config.warningDays * 24 * 60 * 60 * 1000 // Convert days to ms
 
-    for (const {key, value: licenseData} of licenses) {
+    for (const { key, value: licenseData } of licenses) {
       if (licenseData.isBlocked) continue
 
       const validUntil = Number(licenseData.validUntil)
       const timeRemaining = validUntil - currentTime
       const licenseId = key.replace('license:', '')
       const userEmail = licenseData.userEmail
-      const renewalWindow = licenseData.renewalWindow || DEFAULT_RENEWAL_FALLBACK
 
-      // Warn user if license is entering the renewal window
-      if (timeRemaining <= renewalWindow && timeRemaining > 0) {
-        const remainingSeconds = Math.floor(timeRemaining / 1000)
-        await sendLicenseWarningMail(userEmail, licenseId, remainingSeconds)
-        logger.info(`Warning email sent for license ${licenseId} - ${remainingSeconds}s remaining`)
+      // Warn user if license is within the warning period
+      if (timeRemaining <= warningPeriod && timeRemaining > 0) {
+        const remainingDays = msToDays(timeRemaining)
+        await sendLicenseWarningMail(userEmail, licenseId, remainingDays)
+        logger.info(`Warning email sent for license ${licenseId} - ${remainingDays} days remaining`)
       }
 
       // Handle expiration

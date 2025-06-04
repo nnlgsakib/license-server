@@ -1,3 +1,8 @@
+// Helper function to convert milliseconds to days
+export function msToDays(ms: number): number {
+  return Math.ceil(ms / (1000 * 60 * 60 * 24)) // Convert ms to days, round up
+}
+
 // Helper function to format remaining time
 export function getTimeRemaining(expiresAt: number): string {
   const now = Date.now()

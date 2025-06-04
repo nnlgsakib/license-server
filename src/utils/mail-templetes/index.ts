@@ -1,5 +1,2 @@
-export * from './confirmation'
-export * from './expirationTemplate'
-export * from './failedPaymentTemplate'
 export * from './license_mail'
 export * from './license_expiration'

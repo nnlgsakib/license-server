@@ -8,8 +8,6 @@ const parseEnv = (key: string, defaultValue: any = '') => process.env[key] || de
 const parseEnvInt = (key: string, defaultValue: number) =>
   parseInt(process.env[key] || `${defaultValue}`, 10)
 
-// Interface for token configuration with address and decimals
-
 // Export the config object
 export const config = {
   port: parseEnvInt('PORT', 3005),
@@ -19,8 +17,7 @@ export const config = {
   mail_host: parseEnv('MAIL_HOST'),
   mail: parseEnv('MAIL'),
   mail_password: parseEnv('MAIL_PASSWORD'),
-  mail_port: parseEnvInt('MAIL_PORT', 465  ),
+  mail_port: parseEnvInt('MAIL_PORT', 465),
   base_url: parseEnv('BASE_URL'),
+  warningDays: parseEnvInt('WARNING_DAYS', 5), // New: Configurable warning days for expiration emails
 }
-
-// Export chain IDs as an array of strings

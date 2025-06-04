@@ -5,7 +5,7 @@ export function getLicenseWarningSubject(): string {
 export function getLicenseWarningText(licenseId: string, remainingDays: number): string {
   return `Dear Customer,
   
-  Your license (ID: ${licenseId}) is about to expire. Only ${remainingDays} day(s) remain (approximately 5% of the total license period).
+  Your license (ID: ${licenseId}) is nearing its expiration. Only ${remainingDays} day(s) remain.
   
   Please consider renewing your license promptly to avoid service interruption.
   
@@ -70,13 +70,13 @@ export function getLicenseWarningHtml(licenseId: string, remainingDays: number):
         </div>
         <div class="content">
           <p>Dear Customer,</p>
-          <p>Your license (ID: <span class="highlight">${licenseId}</span>) is nearing its expiration. Only about <span class="highlight">${remainingDays} day(s)</span> remain (approximately 5% of the license period).</p>
+          <p>Your license (ID: <span class="highlight">${licenseId}</span>) is nearing its expiration. Only <span class="highlight">${remainingDays} day(s)</span> remain.</p>
           <p>Please consider renewing your license as soon as possible to avoid any service interruptions.</p>
           <p>Best regards,</p>
           <p>W3PAY</p>
         </div>
         <div class="footer">
-          <p>&copy; ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
           <p>If you have any questions, please contact us at support@w3pay.com.</p>
         </div>
       </div>
@@ -162,7 +162,7 @@ export function getLicenseExpiredHtml(licenseId: string): string {
           <p>W3PAY</p>
         </div>
         <div class="footer">
-          <p>&copy; ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} W3PAY. All rights reserved.</p>
           <p>If you have any questions, please contact us at support@w3pay.com.</p>
         </div>
       </div>
