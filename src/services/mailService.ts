@@ -2,15 +2,6 @@
 import nodemailer from 'nodemailer'
 import {config} from '../config/config'
 import {
-  getSubject,
-  getText,
-  getHtml,
-  getFailedPaymentHtml,
-  getFailedPaymentSubject,
-  getFailedPaymentText,
-  getExpirationSubject,
-  getExpirationText,
-  getExpirationHtml,
   getLicenseHtml,
   getLicenseSubject,
   getLicenseText,
@@ -42,70 +33,7 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-export async function sendMail(
-  to: string,
-  paidAmount: number,
-  currency: string,
-  billId: string,
-  storeName: string
-): Promise<void> {
-  try {
-    const subject = getSubject()
-    const text = getText(paidAmount, currency, billId, storeName)
-    const html = getHtml(paidAmount, currency, billId, storeName)
 
-    await transporter.sendMail({
-      from: '"Web3Pay" <no_reply@web3twenty.com>',
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
-    })
-  } catch (error) {
-    console.error('Error sending email:', error)
-  }
-}
-
-// New function to send invoice expiration email
-export async function sendExpirationMail(to: string, billId: string): Promise<void> {
-  try {
-    const subject = getExpirationSubject()
-    const text = getExpirationText(billId)
-    const html = getExpirationHtml(billId)
-
-    await transporter.sendMail({
-      from: '"Web3Pay" <no_reply@web3twenty.com>',
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
-    })
-  } catch (error) {
-    console.error('Error sending expiration email:', error)
-  }
-}
-export async function sendFailedPaymentMail(
-  to: string,
-  billId: string,
-  desiredAmount: string,
-  paidAmount: string
-): Promise<void> {
-  try {
-    const subject = getFailedPaymentSubject()
-    const text = getFailedPaymentText(billId, desiredAmount, paidAmount)
-    const html = getFailedPaymentHtml(billId, desiredAmount, paidAmount)
-
-    await transporter.sendMail({
-      from: '"Web3Pay" <no_reply@web3twenty.com>',
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
-    })
-  } catch (error) {
-    console.error('Error sending failed payment email:', error)
-  }
-}
 
 export async function sendLicenseMail(
   to: string,
