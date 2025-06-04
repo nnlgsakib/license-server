@@ -1,4 +1,4 @@
-export interface LicenseData {
+export interface LicenseData_ {
   license:string
   validUntil: any
   user_key_hash: string // Store the user-specific key in hashed format

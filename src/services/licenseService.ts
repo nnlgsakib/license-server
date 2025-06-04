@@ -40,6 +40,7 @@ export const generateLicense = async (
     user_key_hash: gen_user_key_hash(userKey),
     isBlocked: false,
     userEmail,
+    renewalWindow: undefined
   }
 
   await set(`license:${license}`, licenseData)
